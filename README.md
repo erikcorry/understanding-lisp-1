@@ -1,6 +1,7 @@
 # Understanding LISP-1
 
 LISP-1 was written by L. Peter Deutsch and Edmund C. Berkeley, completed when Peter was 17.
+It is possibly the first REPL we know of.
 
 It ran on a PDP-1 18 bit minicomputer, and the report on it is
 [here](http://s3data.computerhistory.org/pdp-1/DEC.pdp_1.1964.102650371.pdf).
@@ -25,7 +26,7 @@ three-letter labels so the subroutine is called `mys` rather than
 `my_subroutine`
 
 ```
-mys,    dac end   /// Entry code.
+mys,    dap end   /// Entry code.
                   /// Subroutine code here
 end,    jmp .     /// Return instruction.
 ```
@@ -34,7 +35,7 @@ end,    jmp .     /// Return instruction.
 pseudo-label that just indicates the current address it is assembling to.  But how
 does jumping to the current address equal a return instruction?
 
-What happens here is that the `dac` instruction (deposit-address-part) takes the
+What happens here is that the `dap` instruction (deposit-address-part) takes the
 return address (placed in the accumulator by the `jsp` instruction and puts it
 in the low bits (the address part) of the return instruction.  So it uses
 self-modifying code as a normal way to return from a subroutine.
