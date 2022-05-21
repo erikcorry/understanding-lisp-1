@@ -12,10 +12,10 @@ The PDP-1 instruction set is very strange by modern standards.  A summary is
 there is support for subroutines there is no stack, so it's hard to recurse.
 The obvious calling convention has only one return address per function.
 
-There's just one real working register, the accumulator.  In addition there
-are various status registers, and of course the program counter, PC.
+There are just two real working registers, the accumulator and the IO register.
+In addition there are various status registers, and of course the program counter, PC.
 
-## jsp
+## jsp instruction
 
 The `jsp` instruction is the basic building block for subroutine calls.
 It jumps to a new address and saves the program counter (return address) in the
@@ -49,7 +49,7 @@ the previous invocation would get overwritten when you reenter the function.
 Since it uses self-modifying code it also clearly would not work for ROM, but
 the PDP-1 had no ROM, so that was not an issue.
 
-## jda
+## jda instruction
 
 The `jsp` instruction is very useful for a subroutine call, but a little
 inconvenient - given that there is only one register and it gets overwritten.
@@ -67,7 +67,7 @@ myf,    0        // Argument is written here.
 enf,    jmp .    // Return address overwritten here.
 ```
 
-## cal
+## cal instruction/stub
 
 The `cal` instruction adds another layer of complexity.  Bizarrely, it ignores its
 argument and always does a subroutine call (`jda`) to address 100.  (All
@@ -102,13 +102,13 @@ ave,	lac 100
 	exit
 ```
 
-The purpose of this is to make a call into some part of the interpreter in such
-a way that it stores the return address on the interpreter's software stack.
-Thus it is set up so that when the interpreter unwinds its software stack it
-will return right back to the machine code that called it.
+The purpose of this is to make a call, but using a stack of return addresses
+like we are used to from modern systems.  The comments are very
+interpreter-oriented, but really the only part that is interpreter-specific is
+that it pushes the return address onto the interpreter stack.
 
-It works by inspecting the instruction that called it to find the real
-destination!
+Since the `cal` instruction ignores its argment this stub works by inspecting
+the instruction that called it to find the real destination!
 
 The assembly starts with a simple `0`.  Again, this is a word before the real
 code for storing the accumulator/argument.
@@ -126,10 +126,129 @@ Then it does a `jda` subroutine call to `pwl` which is a push subroutine that
 pushes the return address onto the interpreter's stack.
 
 After the push, it restores the accumulator from address 100, which was the
-argument to the interpreter routine it is calling.  Then it uses the self-modified
-jump to tail-call into the interpreter (confusing comment here - "make that the
-return address from the interpreter").
+argument to whatever routine it is calling.  Then it uses the self-modified
+jump to tail-call to the destination - often a part of the interpreter
+(confusing comment here - "make that the return address from the interpreter").
 
-## More to come.
+A fun detail about this calling convention is after the tail call the argument
+is both in the accumulator, but also in location 100.  Some functions use
+the location 100 value instead of the accumulator.  This is especially convenient
+because there is no instruction that uses the accumulator as a load address.
 
-If I decide to spend more time understanding this.
+## uw routine
+
+The unsave word routine would be called `pop` today:
+
+```
+/retrieve word from pdl
+	/unsave word; retrieve word from push down list
+	/unsave word from list
+uw,	0
+uwl,	dap uwx
+	lio i pdl
+/// subtract 1 from pdl
+	undex pdl
+/// unsave word, exit
+uwx,	exit
+```
+
+This is designed to be called directly with `jda`.  The old accumulator is placed
+in the `uw` location, the accumulator contains the return address, and execution
+starts at the next word, marked `uwl`.
+
+The return address is used to overwrite the jmp instruction at `uwx` so we can return.
+
+The top of stack is loaded into the IO register (which is where the caller
+expects to find it).  The stack pointer is then decremented, and we use the
+previously modified jump instruction to return.
+
+If the caller wants to restore the accumulator they can find it at the `uw` location.
+
+The io register is clobbered by the return value.
+
+## pwl routine
+
+The push word on list function checks for stack overflow, jumping to qg2 if
+the stack (push-down list) is too full.  It is otherwise quite straightforward
+if you already understood the `uw` routine above:
+
+```
+/// push word on list (append word to push-down list)
+/append word to pdl
+pwl,	0
+/// put return address into jmp instruction
+	dap pwx
+/// next position on push-down list
+	idx pdl
+	sad bfw
+/// ran into bfw
+	jmp qg2
+/// restore accumulator
+	lac pwl
+/// put it onto list
+	dac i pdl
+/// push word exit
+pwx,	exit
+```
+
+The accumulator is not clobbered.
+
+## x stub
+
+Runtime routines return by jumping to the x stub.  It pops the return address
+off the stack (push down list) by calling `uw`.  It clobbers the IO register,
+but preserves the accumulator by reloading it from the header of the `uw`
+function where it knows it was spilled.
+
+```
+/// exit from machine language LISP functions
+x,	jda uw
+	dio rx
+	lac uw
+/// return to calling sequence of a subroutine
+rx,	exit
+```
+
+}
+
+## vag routine
+
+This is a routine for unpacking a tagged integer from a memory cell.
+The numeric cell stores an 18 bit number in two consecutive words.
+The first word has a numeric tag of 3 (binary 11) in the top two bits
+and the low 16 bits of the numeric payload in the other 16 bits.
+
+The second word provides the high bit and the sign bit in the lowest
+bits.  The other 16 bits are unused as far as I can tell.
+
+```
+11 nnnn nnnn nnnn nnnn      .. .... .... ..... ...sn
+```
+
+As can be seen the numeric cell has the same size (two words) as a
+cons cell.
+
+The `vag` routine makes use of the fact that its argument has been
+spilled by the entry code, so that it can be found at address 100.
+Comments are mine:
+
+```
+/get numeric value
+vag,	lio i 100    /// Indirect load of argument cell into IO register.
+	cla          /// Clear accumulator.
+	rcl 2s       /// Roll AC and IO left two places so AC has top two bits of IO.
+	sas (3       /// Skip next instruction if AC == 3.
+	jmp qi3      /// Jump to error if tag != 3 (numeric tag).
+	idx 100      /// Increment argument to get word two of the cell.
+	lac i 100    /// Indirect load of arg[1] into accumulator.
+	rcl 8s       /// Roll AC and IO left 8 places.
+	rcl 8s       /// Another 8 places.  AC now has the full 18 bit integer in it.
+	jmp x        /// Return untagged result in AC.
+```
+
+## xeq function
+
+The xeq function a LISP function for running a single machine code instruction.
+That one instruction can be a jmp instruction though, so it can actually be
+used to run any number of instructions.  The paper suggests 60nnnn to jump to
+code at the 12 bit address nnnn.
