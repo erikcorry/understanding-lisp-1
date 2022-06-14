@@ -137,7 +137,8 @@ because there is no instruction that uses the accumulator as a load address.
 
 ## uw routine
 
-The unsave word routine would be called `pop` today:
+The "unsave word" routine would be called `pop` today, and the "push down list"
+would be called the stack.
 
 ```
 /retrieve word from pdl
@@ -159,7 +160,7 @@ starts at the next word, marked `uwl`.
 The return address is used to overwrite the jmp instruction at `uwx` so we can return.
 
 The top of stack is loaded into the IO register (which is where the caller
-expects to find it).  The stack pointer is then decremented, and we use the
+expects to find it).  The stack pointer (pdl) is then decremented, and we use the
 previously modified jump instruction to return.
 
 If the caller wants to restore the accumulator they can find it at the `uw` location.
@@ -195,7 +196,7 @@ The accumulator is not clobbered.
 
 ## x stub
 
-Runtime routines return by jumping to the x stub.  It pops the return address
+Functions return by jumping to the x stub.  It pops the return address
 off the stack (push down list) by calling `uw`.  It clobbers the IO register,
 but preserves the accumulator by reloading it from the header of the `uw`
 function where it knows it was spilled.
@@ -246,9 +247,105 @@ vag,	lio i 100    /// Indirect load of argument cell into IO register.
 	jmp x        /// Return untagged result in AC.
 ```
 
+## crn routine
+
+Create number is a routine that takes an integer in the accumulator
+and writes it to a newly allocated integer cell, returning the address
+of the new cell in the accumulator.
+
+Comments mine:
+
+```
+/create number
+crn,	lio (jmp    // Load 600000 into IO.
+	rcl 2s      // Rotate AC and IO together left 2.
+	rar 2s      // Rotate AC right 2.
+	dac 100     // Store the low 16 bits of AC in the argument location.
+	jmp cpf     // Tail call to cons pair in full space.
+```
+
+The effect of this is to move the top two bits of AC to the low bits of
+IO, and replace the top two bits of AC with a tag of 11, storing the
+tagged value in 100, the argument location.  This means that writing
+100 and IO to a cons cell will store a correctly tagged number in that cell.
+
+Note that the `(jmp` instruction just happens to have the correct binary
+pattern for this operation: `11_0000_0000_0000_0000`.  The author doesn't
+think this worth a comment!
+
+## cpf routine
+
+Cons pair in full space.
+
+```
+cpf,	dzm ffi
+	jmp cnc
+```
+
+Stores 0 in ffi, then tail calls to cnc (cons continuation routine).
+
+I haven't worked out what ffi is for yet, but it's read by the GC.
+
+## cns routine
+
+Cons routine.
+
+```
+cns,	idx ffi
+```
+
+Increments ffi, then falls through to cnc
+
+I haven't worked out what ffi is for yet, but it's read by the GC.
+
+## cnc routine
+
+Cons continuation.
+
+This routine checks for free list exhaustion, and calls the garbage collector
+if we are out of space.  Being out of space is indicating by the next free cons
+cell being the nil object.
+
+Comments mine:
+
+```
+cnc,	lac fre  /// Load the free list pointer.
+	sad n    /// Compare with n, the location of nil.
+	jmp gcs  /// Conditionally jump to the GC.
+```
+
+If there is no GC, it falls through to cna (cons, sub a).  If there is a GC the
+GC jumps to cna when it is done.
+
+## cna routine
+
+Cons, sub a.
+
+This routine allocates and populates a memory cell.
+It assumes the free list has already been checked for
+exhaustion.
+
+On entry, AC points at the free cell, the desired car is in 100, the subroutine
+argument location, and the the desired cdr is in the IO register.  On exit the
+location of the new cell is in AC.
+
+Comments mine:
+
+```
+cna,	dac t0     /// Spill AC (the new cell) to temp 0.
+	lac 100    /// Load AC from 100, the subroutine arg location.
+	dac i fre  /// Store AC through free pointer.
+	idx fre    /// Increment free pointer to part two of cell.
+	lac i fre  /// Load next cell in free list from part two of cell.
+	dio i fre  /// Store IO in part two of cell.
+	dac fre    /// Store new free cell in free list pointer.
+	lac t0     /// Restore AC (the new cell) from temp 0.
+	jmp x      /// Return from subroutine.
+```
+
 ## xeq function
 
-The xeq function a LISP function for running a single machine code instruction.
+The xeq function is a LISP function for running a single machine code instruction.
 That one instruction can be a jmp instruction though, so it can actually be
 used to run any number of instructions.  The paper suggests 60nnnn to jump to
 code at the 12 bit address nnnn.
