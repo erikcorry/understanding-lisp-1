@@ -12,7 +12,7 @@ The PDP-1 instruction set is very strange by modern standards.  A summary is
 there is support for subroutines there is no stack, so it's hard to recurse.
 The obvious calling convention has only one return address per function.
 
-There are just two real working registers, the accumulator and the IO register.
+There are just two real working registers, the accumulator (AC) and the IO register.
 In addition there are various status registers, and of course the program counter, PC.
 
 ## jsp instruction
@@ -119,8 +119,8 @@ Then it loads the actual destination, using the return address to locate
 it.  For this it uses self-modifying code again, writing the next instruction
 (`.+1`).  It writes the actual destination to the last instruction of the
 stub, ready for a tail call.
-(It does this by modifying a macro-assembler pseudo-instruction called `exit`
-which presumably is equivalent to `jmp .`.)
+(It does this by modifying an assembler macro called `exit`
+which is equivalent to `jmp .` - see page 20 of the report.)
 
 Then it does a `jda` subroutine call to `pwl` which is a push subroutine that
 pushes the return address onto the interpreter's stack.
@@ -162,6 +162,18 @@ The return address is used to overwrite the jmp instruction at `uwx` so we can r
 The top of stack is loaded into the IO register (which is where the caller
 expects to find it).  The stack pointer (pdl) is then decremented, and we use the
 previously modified jump instruction to return.
+
+Decrementing the stack pointer is done with the three-instruction macro,
+`undex`, which is at page 20 of the report:
+
+Comments mine:
+```
+define		undex
+	law i 1		// Load AC with -1.  (For the law instruction, the i bit negates.)
+	add A		// Add the stack pointer.  (A is the name of the first macro argument).
+	dac A		// Deposit AC in the stack pointer.
+	termin
+```
 
 If the caller wants to restore the accumulator they can find it at the `uw` location.
 
@@ -214,7 +226,7 @@ rx,	exit
 
 ## vag routine
 
-This is a routine for unpacking a tagged integer from a memory cell.
+Value get is a routine for unpacking a tagged integer from a memory cell.
 The numeric cell stores an 18 bit number in two consecutive words.
 The first word has a numeric tag of 3 (binary 11) in the top two bits
 and the low 16 bits of the numeric payload in the other 16 bits.
@@ -231,20 +243,20 @@ cons cell.
 
 The `vag` routine makes use of the fact that its argument has been
 spilled by the entry code, so that it can be found at address 100.
-Comments are mine:
 
+Comments mine:
 ```
 /get numeric value
-vag,	lio i 100    /// Indirect load of argument cell into IO register.
-	cla          /// Clear accumulator.
-	rcl 2s       /// Roll AC and IO left two places so AC has top two bits of IO.
-	sas (3       /// Skip next instruction if AC == 3.
-	jmp qi3      /// Jump to error if tag != 3 (numeric tag).
-	idx 100      /// Increment argument to get word two of the cell.
-	lac i 100    /// Indirect load of arg[1] into accumulator.
-	rcl 8s       /// Roll AC and IO left 8 places.
-	rcl 8s       /// Another 8 places.  AC now has the full 18 bit integer in it.
-	jmp x        /// Return untagged result in AC.
+vag,	lio i 100    // Indirect load of argument cell into IO register.
+	cla          // Clear accumulator.
+	rcl 2s       // Roll AC and IO left two places so AC has top two bits of IO.
+	sas (3       // Skip next instruction if AC == 3.
+	jmp qi3      // Jump to error if tag != 3 (numeric tag).
+	idx 100      // Increment argument to get word two of the cell.
+	lac i 100    // Indirect load of arg[1] into accumulator.
+	rcl 8s       // Roll AC and IO left 8 places.
+	rcl 8s       // Another 8 places.  AC now has the full 18 bit integer in it.
+	jmp x        // Return untagged result in AC.
 ```
 
 ## crn routine
@@ -260,7 +272,7 @@ Comments mine:
 crn,	lio (jmp    // Load 600000 into IO.
 	rcl 2s      // Rotate AC and IO together left 2.
 	rar 2s      // Rotate AC right 2.
-	dac 100     // Store the low 16 bits of AC in the argument location.
+	dac 100     // Store AC in the argument location.
 	jmp cpf     // Tail call to cons pair in full space.
 ```
 
@@ -303,7 +315,7 @@ I haven't worked out what ffi is for yet, but it's read by the GC.
 Cons continuation.
 
 This routine checks for free list exhaustion, and calls the garbage collector
-if we are out of space.  Being out of space is indicating by the next free cons
+if we are out of space.  Being out of space is indicated by the next free cons
 cell being the nil object.
 
 Comments mine:
@@ -325,23 +337,27 @@ This routine allocates and populates a memory cell.
 It assumes the free list has already been checked for
 exhaustion.
 
-On entry, AC points at the free cell, the desired car is in 100, the subroutine
-argument location, and the the desired cdr is in the IO register.  On exit the
-location of the new cell is in AC.
+On entry, AC and fre, the free pointer both point at the free cell, the desired
+[car](https://en.wikipedia.org/wiki/CAR_and_CDR) is in 100, the subroutine
+argument location, and the the desired
+[cdr](https://en.wikipedia.org/wiki/CAR_and_CDR) is in the IO register.  On
+exit the location of the new cell is in AC.
 
 Comments mine:
+```
+cna,	dac t0     // Spill AC (the new cell) to temp 0.
+	lac 100    // Load AC from 100, the subroutine arg location.
+	dac i fre  // Store AC through free pointer.
+	idx fre    // Increment free pointer to part two of cell.
+	lac i fre  // Load next cell in free list from part two of cell.
+	dio i fre  // Store IO in part two of cell.
+	dac fre    // Store new free cell in free list pointer.
+	lac t0     // Restore AC (the new cell) from temp 0.
+	jmp x      // Return from subroutine.
+```
 
-```
-cna,	dac t0     /// Spill AC (the new cell) to temp 0.
-	lac 100    /// Load AC from 100, the subroutine arg location.
-	dac i fre  /// Store AC through free pointer.
-	idx fre    /// Increment free pointer to part two of cell.
-	lac i fre  /// Load next cell in free list from part two of cell.
-	dio i fre  /// Store IO in part two of cell.
-	dac fre    /// Store new free cell in free list pointer.
-	lac t0     /// Restore AC (the new cell) from temp 0.
-	jmp x      /// Return from subroutine.
-```
+As can be seen, the free list is a series of two word cells, chained up using
+the second word (cdr) of each cell as a pointer to the next cell.
 
 ## xeq function
 
