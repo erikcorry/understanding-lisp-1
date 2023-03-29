@@ -307,7 +307,8 @@ crn,	lio (jmp    // Load 600000 into IO.
 The effect of this is to move the top two bits of AC to the low bits of
 IO, and replace the top two bits of AC with a tag of 11, storing the
 tagged value in 100, the argument location.  This means that writing
-100 and IO to a cons cell will store a correctly tagged number in that cell.
+100 and IO to a cons cell will store a [correctly tagged number](#vag-routine)
+in that cell.
 
 Note that the `(jmp` instruction just happens to have the correct binary
 pattern for this operation: `11_0000_0000_0000_0000`.  The author doesn't

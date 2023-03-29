@@ -1,0 +1,293 @@
+To:	Users
+From:	Bob Supnik
+Subj:	PDP-1 LISP
+Date:	25-Apr-2005
+
+				COPYRIGHT NOTICE
+
+The following copyright notice applies to both the LISP source and binary:
+
+	Original code published in 1964, written by L. Peter Deutsch
+	Portions Copyright (C) 1997 Digital Equipment Corporation
+
+	All Rights Reserved except as specified below.
+
+	Permission is hereby granted to use, copy, modify, and distribute
+	this software (or portions thereof) for any purpose, without fee,
+	subject to these conditions:
+
+	(1) If any part of the source code for this software is distributed,
+	then this copyright and no-warranty notice must be included
+	unaltered; and any additions, deletions, or changes to the original
+	files must be clearly indicated in accompanying documentation.
+
+	(2) If only executable code is distributed, then the accompanying
+	documentation must state that "this software is based in part on the
+	original work of L. Peter Deutsch".
+
+	(3) Permission for use of this software is granted only if the user
+	accepts full responsibility for any undesirable consequences; the
+	authors accept NO LIABILITY for damages of any kind.
+
+	These conditions apply to any software derived from or based on this
+	code, not just to the unmodified code.
+
+	Permission is NOT granted for the use of any author's name or
+	company name in advertising or publicity relating to this software
+	or products derived from it.
+
+
+1. Introduction
+
+This package contains the source and binary for PDP-1 LISP, a LISP interpreter
+for the PDP-1.  This historic program was written by Peter Deutsch in 1963 and
+1964.  It was the first LISP interpreter on an interactive system and one of
+the first in general use.
+
+The package contains the following items:
+
+	lisp.mac		LISP source code, complete in one file
+	lisp.rim		LISP binary in read-in mode (RIM) format
+	macro1.c		assembler for LISP
+
+To assemble LISP, you must first compile the assembler:
+
+	cc macro1.c -o macro1
+
+and then use it to assemble the sources:
+
+	macro1 lisp.mac
+
+The assembler is NOT a line for line reconstruction of PDP-1 macro; it contains
+exactly enough functionality to assemble LISP, and no more.
+
+
+2. History Of The Program
+
+The following comments were supplied by Peter Deutsch, the program's author:
+
+"I wrote PDP-1 Lisp because I had a strong mathematical bent, I'd become
+intrigued with the Lisp language as a result of having somehow picked up a
+copy of the original Lisp 1.5 Programmer's Manual at MIT, and I wanted to
+have an interactive Lisp implementation to play with rather than having to
+submit card decks at the MIT Computation Center.  (Bear in mind that I was
+in high school at the time -- 1960-1964.)  I'd ingratiated myself with the
+folks at the TX-0 (and later PDP-1) lab at MIT, so I had pretty free access
+to the machine there.
+
+"I think the most interesting aspect of the design philosophy, in retrospect,
+was that I instinctively homed in on the fact that when implementing a
+language using an interpreter, operations in the language that were
+documented as primitive could in fact be implemented within the language
+(i.e., interpretively) using simpler primitives.  (Maybe this fact was
+common knowledge at the time, and I'm just not remembering it.)  Thus
+operations like CAAR were actually implemented in Lisp as (LAMBDA (X) (CAR
+(CAR X))).  This was a pure time/space tradeoff, since Lisp S-expressions
+took less space than PDP-1 machine code.  I used this approach to tremendous
+advantage in my subsequent Lisp work (my PDP-1 Lisp implementation, as you
+probably know, was extensively rewritten at BB&N to become the conceptual
+predecessor of BBN-Lisp, which in turn engendered Interlisp), and also in
+the Smalltalk and PostScript implementations I was involved with later on.
+
+"I did all the development on a machine whose only long-term non-volatile
+storage device was paper tape: the word processor read in a paper tape,
+allowed you to edit, and then punched out an entire new tape.  (When I
+arrived at MIT, the word processor, Expensive Typewriter, didn't have any
+facilities for backing up in the input, since it was designed as a
+tape-to-tape editor: I rewrote it to be RAM-based, and added a lot of new
+facilities.)  You then had to run the edited tape through the assembler,
+producing another tape of the executable, and then run *that* tape back into
+the machine for execution.  (I also hacked up Expensive Typewriter to
+integrate directly with the assembler, using the machine's swapping drum to
+pass the source code, so the intermediate tape was no longer needed; in
+fact, as I recall, you could even defer punching out the edited tape.)  This
+was another theme that has run through a lot of my subsequent career:
+sometimes the tools I developed along the way were as interesting as
+whatever it was that I was developing using those tools."
+
+
+3. User's Guide
+
+To run LISP on the PDP-1 simulator, first enable hardware multiply/divide,
+which the program requires.  Then load the rim format tape into memory
+and begin execution in extend mode.  The program halts; enter the upper
+bounds of free storage via the test word switches (TW) and continue.  LISP
+runs in extend mode; any value from 07777 to the upper bounds of memory will
+work.  The program halts again; enter the size of the push down list via the
+test word switches and continue.  List sizes between 200 and 400 words are
+suggested.  The program halts a third time; select the input device via the
+sense switches (sense switch 5 on for the typewriter, off for the paper tape
+reader).  Because the setup is so complicated, save the state of the system
+before continuing:
+
+	sim> set cpu mdv
+	sim> load lisp.rim
+	sim> d extm_init 1
+	sim> run
+
+	HALT INSTRUCTION, PC: 002353 (CLA LAT CLI)
+	sim> d tw 7777
+	sim> c
+
+	HALT INSTRUCTION, PC: 002357 (CLA LAT)
+	sim> d tw 400
+	sim> c
+
+	HALT INSTRUCTION, PC: 000005 (STF5)
+	sim> d ss 2
+	sim> save lisp.sav
+	sim> c
+
+Quoting from the original operating instructions, "At this point, the LISP
+system is ready for manual typewriter input.  As soon as the operator types,
+for example:
+
+	(car (quote (a b c d)))
+
+together with a final space at the end of the last right parenthesis, the
+computer takes control of the typewriter, impulses a carriage return, and
+then types out:
+
+	a
+
+which of course is the correct answer.  Similarly for the other suggested
+test sequences in Table 2 below."
+
+				Table 1
+		FUNCTIONS AND PROPERTIES OF BASIC PDP-1 LISP
+
+	atom
+	car		returns the first item in the argument list.
+	cdr		returns all but the first item in the argument list.
+	cond x y...	successively evaluates predicates x, y, etc until
+			a true predicate is found; returns the value of
+			the predicate.
+	CONS x y..	returns the concatenation of its argument list.
+	eq x y		returns true if x and y are the same, otherwise nil.
+			x and y can be atoms or numbers.
+	eval x		evaluates a list and returns its value.
+	gensym		returns a unique generated atom gnnnnnn.
+	greaterp x y	returns true if x > y, otherwise nil.
+	go
+	list
+	loc x		gives the machine register in which the atom
+			or list x begins; its value is the location.
+	logand x y...	returns the logically and of the argument list.
+	logor x y...	returns the logical or of the argument list.
+	minus x		returns the one's complement of the argument.
+	null x		returns t if the argument is nil or empty, otherwise t.
+	numberp x	returns t if the argument is a number, otherwise nil.
+	plus x y...	returns the sum of the argument list.
+	prin1 x		prints the atom x without the extra space at the
+			end.  Its value is nil.
+	print
+	prog
+	quote
+	quotient x y	returns x divided by y.
+	read
+	return
+	rplaca
+	rplacd
+	sassoc
+	setq
+	stop x		halts the computer with x in the accumulator.
+	terpri		prints a carriage return.
+	times x y...	returns the product of the argument list
+	xeq c a i	executes the machine language instruction c, with a
+			in the accumulator and i in the in-out register; and
+			returns a value in the form of (a i P) where a is the
+			new value of the accumulator after execution, i is
+			the new value of the in-out register after execution,
+			and P is t if the instruction skipped, and nil if the
+			instruction did not skip.
+
+PDP-1 LISP has the following permanent objects.
+
+	oblist		the current list of atomic symbols.
+	nil		false value
+	t		true value
+	expr
+	subr
+	fexpr
+	fsubr
+	apval
+
+				Table 2
+			SUGGESTED TEST SEQUENCES
+
+	input					response
+	-----					--------
+
+	(car (quote (a b c d)))			a
+
+	(cdr (quote (a b c d)))			(b c d)
+
+	oblist					The interpreter will type out
+						a complete list of the atomic
+						symbols stored within it.
+
+	(list (quote (a b c d)))		((a b c d))
+
+	nil					nil
+
+	(cdr nil)				(apval nil)
+
+	(car (quote (t.nil)))			t
+
+	(cons (atom (cdr t))(list		(nil g000001 g000002)
+		(gensym)(gensym)))
+
+	(cond ((eq t nil) (stop 1))		t
+		(t (eq (plus 1 1) 2)))
+
+	(prog (u) (print nil)(terpri)		nil
+		(print t)(setq u t)		t
+		(return u))			t
+
+	(rplacd (quote caar)(quote		caar
+		(expr (lambda (x) (car
+		(car x))))))
+
+	(caar (quote ((a))))			a
+
+	(stop 2)				The computer stops and puts
+						2 in the accumulator.
+
+	(prin1 (quote car))			car, with no punctuation before
+						or after; the value of PRIN1 is
+						nil.
+
+	(print u)				Prints out the value of u; the
+						value of (print u) is u.
+
+	(terpri)				Prints a carriage return; the
+						value of (terpri) is nil.
+
+	(loc nil)				This is the register where the
+						nil atom starts.
+
+	(loc (quote cond))			This is the register where the
+						cond atom starts.
+
+	(logand 6 7 3)				2
+
+	(logor 12 3 15)				17
+
+	(rplaca (quote (nil x y))		((a b) x y)
+		(quote (a b)))
+
+
+4. Provenance Of The Source
+
+The sources to PDP-1 LISP were published in their entirety in the book "The
+Programming Language LISP: Its Operation and Applications" by Edmund C.
+Berkeley and Daniel G. Bobrow, 1964.  Gordon Greene typed the sources in by
+hand, assembled them, and then published the assembly listing on the Internet.
+The source used here results from a line by line comparison of the Internet
+source with the published source.  Corrections to the Internet source are
+noted by /** in the comments field.
+
+The assembler is derived from a PDP-8 assembler written by Gary A. Messenbrink
+which I modified to support macros, then PDP-7 code, and finally PDP-1 code.
+Paul McJones supplied the LISP book and original listings.  Brian Silverman
+at MIT provided help on the functions of the PDP-1 macro assembler.
