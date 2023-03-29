@@ -156,9 +156,9 @@ is both in the accumulator, but also in location 100.  Some functions use
 the location 100 value instead of the accumulator.  This is especially convenient
 because there is no instruction that uses the accumulator as a load address.
 
-## uw routine
+## uw subroutine
 
-The "unsave word" routine would be called `pop` today, and the "push down list"
+The "unsave word" subroutine would be called `pop` today, and the "push down list"
 would be called the stack.
 
 ```
@@ -200,11 +200,11 @@ If the caller wants to restore the accumulator they can find it at the `uw` loca
 
 The io register is clobbered by the return value.
 
-## pwl routine
+## pwl subroutine
 
 The push word on list function checks for stack overflow, jumping to qg2 if
 the stack (push-down list) is too full.  It is otherwise quite straightforward
-if you already understood the `uw` routine above:
+if you already understood the `uw` subroutine above:
 
 ```
 /// push word on list (append word to push-down list)
@@ -239,7 +239,7 @@ function where it knows it was spilled.
 x,	jda uw
 	dio rx
 	lac uw
-/// return to calling sequence of a subroutine
+/// return to calling sequence of a routine
 rx,	exit
 ```
 
@@ -270,7 +270,7 @@ As can be seen, the numeric cell has the same size (two words) as a
 cons cell.
 
 The `vag` routine is designed to be called via the recursion-capable
-[cal](#cal) instruction/stub.  That is, it finds its argument at address 100.
+[cal](#cal-instructionstub) instruction/stub.  That is, it finds its argument at address 100.
 
 Comments mine:
 ```
