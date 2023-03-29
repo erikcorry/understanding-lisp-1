@@ -15,6 +15,18 @@ The obvious calling convention has only one return address per function.
 There are just two real working registers, the accumulator (AC) and the IO register.
 In addition there are various status registers, and of course the program counter, PC.
 
+The instruction set is divided up into 5-bit
+opcode, a 1-bit indirection flag, and 12 bits of address or operand.  Bits
+are numbered from 0 (high bit) to 17 (low bit).
+
+```
+                      1 1 1 1 1 1 1 1
+  0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7    bits
+┌──────┴───┬─┼─────┴─────┴─────┴─────┐
+│  opcode  │i│   address / operand   │   instruction format
+└──────────┴─┴───────────────────────┘
+```
+
 ## jsp instruction
 
 The `jsp` instruction is the basic building block for subroutine calls.
@@ -36,18 +48,24 @@ pseudo-label that just indicates the current address it is assembling to.  But h
 does jumping to the current address equal a return instruction?
 
 What happens here is that the `dap` instruction (deposit-address-part) takes the
-return address (placed in the accumulator by the `jsp` instruction and puts it
+return address (placed in the accumulator by the `jsp` instruction) and puts it
 in the low bits (the address part) of the return instruction.  So it uses
 self-modifying code as a normal way to return from a subroutine.
 
-The instruction format of the PDP-1 has the opcode in the high bits and the low
-bits are the argument, so this rewrites the `jmp` instruction to return to the
+Since the instruction format of the PDP-1 has the opcode in the high bits and the low
+bits are the argument, this rewrites the `jmp` instruction to return to the
 correct place.
 
 As you can see this scheme does not allow for recursion.  The return address for
 the previous invocation would get overwritten when you reenter the function.
 Since it uses self-modifying code it also clearly would not work for ROM, but
 the PDP-1 had no ROM, so that was not an issue.
+
+This instruction set reflects the idea, popular in the early days of computing,
+that a function might not be "reentrant". These days that word is normally used
+to mean thread-safe, but originally a non-reentrant subroutine could not even
+be called twice on a single thread. Perhaps it used static working variables,
+or perhaps there was literally no stack to store the return addresses.
 
 ## jda instruction
 
@@ -110,20 +128,23 @@ that it pushes the return address onto the interpreter stack.
 Since the `cal` instruction ignores its argment this stub works by inspecting
 the instruction that called it to find the real destination!
 
-The assembly starts with a simple `0`.  Again, this is a word before the real
-code for storing the accumulator/argument.
+The assembly starts with a simple `0`.  Again, this just reserves space for
+a word before the real code for storing the accumulator/argument.
 
-It temporarily stores the return address in a fixed position, `rx`.
+The `dap rx` instruction temporarily stores the return address in a fixed
+memory location, `rx`.
 
 Then it loads the actual destination, using the return address to locate
-it.  For this it uses self-modifying code again, writing the next instruction
+it.  For this it uses self-modifying code again, overwriting the address
+part of the `lac` instruction, located by adding one to the assembler's
+current-address register
 (`.+1`).  It writes the actual destination to the last instruction of the
 stub, ready for a tail call.
 (It does this by modifying an assembler macro called `exit`
 which is equivalent to `jmp .` - see page 20 of the report.)
 
 Then it does a `jda` subroutine call to `pwl` which is a push subroutine that
-pushes the return address onto the interpreter's stack.
+will push the return address onto the interpreter's stack.
 
 After the push, it restores the accumulator from address 100, which was the
 argument to whatever routine it is calling.  Then it uses the self-modified
@@ -226,29 +247,36 @@ rx,	exit
 
 ## vag routine
 
-Value get is a routine for unpacking a tagged integer from a memory cell.
+All memory cells (objects) in Lisp-1 are the same size, namely two words.
+Because Lisp is a dynamically typed language, all cells must be tagged with
+their type.  One of the types is the cons, and another is the
+numeric (integer) type.
+
+Value get (`vag`) is a routine for unpacking a tagged integer from a memory cell.
 The numeric cell stores an 18 bit number in two consecutive words.
-The first word has a numeric tag of 3 (binary 11) in the top two bits
+The first word has a numeric type tag of 3 (binary 11) in the top two bits
 and the low 16 bits of the numeric payload in the other 16 bits.
 
-The second word provides the high bit and the sign bit in the lowest
+The second word provides the high bit (H) and the sign bit (S) in the lowest
 bits.  The other 16 bits are unused as far as I can tell.
 
 ```
-11 nnnn nnnn nnnn nnnn      .. .... .... ..... ...sn
+┌────┬─┴─────┴─────┴─────┴─────┴─────┐┌─────┴─────┴─────┴─────┴─────┴─┬────┐
+│ 11 │  low 16 bits of integer       ││  unused                       │ SH │
+└────┴───────────────────────────────┘└───────────────────────────────┴────┘
 ```
 
-As can be seen the numeric cell has the same size (two words) as a
+As can be seen, the numeric cell has the same size (two words) as a
 cons cell.
 
-The `vag` routine makes use of the fact that its argument has been
-spilled by the entry code, so that it can be found at address 100.
+The `vag` routine is designed to be called via the recursion-capable
+[cal](#cal) instruction/stub.  That is, it finds its argument at address 100.
 
 Comments mine:
 ```
 /get numeric value
 vag,	lio i 100    // Indirect load of argument cell into IO register.
-	cla          // Clear accumulator.
+	cla          // Clear accumulator with zero.
 	rcl 2s       // Roll AC and IO left two places so AC has top two bits of IO.
 	sas (3       // Skip next instruction if AC == 3.
 	jmp qi3      // Jump to error if tag != 3 (numeric tag).
@@ -261,7 +289,7 @@ vag,	lio i 100    // Indirect load of argument cell into IO register.
 
 ## crn routine
 
-Create number is a routine that takes an integer in the accumulator
+Create number is a routine that takes an untagged integer in the accumulator
 and writes it to a newly allocated integer cell, returning the address
 of the new cell in the accumulator.
 
@@ -284,6 +312,9 @@ tagged value in 100, the argument location.  This means that writing
 Note that the `(jmp` instruction just happens to have the correct binary
 pattern for this operation: `11_0000_0000_0000_0000`.  The author doesn't
 think this worth a comment!
+
+Once the tagged 18 bit integer has been placed in location 100, and the IO
+register, it tail calls a routine that will store it to a newly allocated cell:
 
 ## cpf routine
 
@@ -335,13 +366,20 @@ Cons, sub a.
 
 This routine allocates and populates a memory cell.
 It assumes the free list has already been checked for
-exhaustion.
+exhaustion. If the memory cell has cons type then this
+operation is called cons, and the cell will consist
+of two pointers, conventionally called 
+[car](https://en.wikipedia.org/wiki/CAR_and_CDR) and
+[cdr](https://en.wikipedia.org/wiki/CAR_and_CDR).
 
-On entry, AC and fre, the free pointer both point at the free cell, the desired
-[car](https://en.wikipedia.org/wiki/CAR_and_CDR) is in 100, the subroutine
-argument location, and the the desired
-[cdr](https://en.wikipedia.org/wiki/CAR_and_CDR) is in the IO register.  On
-exit the location of the new cell is in AC.
+Despite the name, this routine is used to create
+different types of cells, not just cons cells.
+
+On entry, the location of the new cell is in AC, the
+value for the first word is in 100, the subroutine
+argument location, and the value for the second word
+is in the IO register.  On exit, the location of the
+new cell is in AC.
 
 Comments mine:
 ```
@@ -357,11 +395,11 @@ cna,	dac t0     // Spill AC (the new cell) to temp 0.
 ```
 
 As can be seen, the free list is a series of two word cells, chained up using
-the second word (cdr) of each cell as a pointer to the next cell.
+the second word of each cell as a pointer to the next cell.
 
 ## xeq function
 
-The xeq function is a LISP function for running a single machine code instruction.
+The xeq ('exequte') function is a LISP function for running a single machine code instruction.
 That one instruction can be a jmp instruction though, so it can actually be
-used to run any number of instructions.  The paper suggests 60nnnn to jump to
-code at the 12 bit address nnnn.
+used to run any number of instructions.  The paper suggests the single machine
+code instruction could be 60nnnn to jump to code at the 12 bit address nnnn.
