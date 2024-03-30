@@ -167,27 +167,21 @@ uwx,	exit
 buf,
 77/	0
 
-/// This is where cal goes!
-/// This is the eval interpreter, duh-head!
-/// so... where >is< rx?  A fair question, methinks.
+/// Address 100, where the cal instruction goes.
 	0
-/// save return address
 	dap rx
-/// get address of original cal instruction
-	sub (1
-/// put it into next instruction
-	dap .+1
-/// get what was at that address
-	lac xy
-/// make that the return adddress from the interpreter
-	dap ave+1
-/// get return address back and push on stack
+	sub (1        /// Get address of original cal instruction.
+	dap .+1       /// Put it into next instruction.
+	lac xy        /// Get the address at the call site.
+	dap ave+1     /// Overwrite the tail call with the destination.
+        /// Inlined version of pdl (push of return address).
+	idx pdl       /// Increment stack pointer (overwrites accumulator).
+	sad bfw       /// Bounds check.
+	jmp qg2       /// Jump on stack overflow.
 	lac rx
-	jda pwl
-/// advance, end
-/// restore AC
-ave,	lac 100
-	exit
+	dac i pdl     /// Store on stack.
+ave,	lac 100       /// Restore accumulator argument.
+	exit          /// Tail call, overwritten with our destination.
 
 /create number
 crn,	lio (jmp

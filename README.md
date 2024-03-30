@@ -4,11 +4,14 @@ LISP-1 was written by L. Peter Deutsch and Edmund C. Berkeley, completed when Pe
 It is possibly the first REPL we know of.
 
 It ran on a PDP-1 18 bit minicomputer, and the report on it is
-[here](http://s3data.computerhistory.org/pdp-1/DEC.pdp_1.1964.102650371.pdf).
+[here](https://s3data.computerhistory.org/pdp-1/DEC.pdp_1.1964.102650371.pdf).
 It includes the macro-assembler source that I quote from here.
 
 The PDP-1 instruction set is very strange by modern standards.  A summary is
-[here](https://www.masswerk.at/spacewar/inside/pdp1-instructions.html).  Although
+[here](https://www.masswerk.at/spacewar/inside/pdp1-instructions.html).  A more
+complete references is [here](https://bitsavers.org/pdf/dec/pdp1/F15D_PDP1_Handbook_Oct63.pdf).
+
+Although
 there is support for subroutines there is no stack, so it's hard to recurse.
 The obvious calling convention has only one return address per function.
 
@@ -109,7 +112,7 @@ are clearly written by a teenager!)
 	dap .+1
 /// get what was at that address
 	lac xy
-/// make that the return adddress from the interpreter
+/// make that the return address from the interpreter
 	dap ave+1
 /// get return address back and push on stack
 	lac rx
@@ -155,6 +158,28 @@ A fun detail about this calling convention is after the tail call the argument
 is both in the accumulator, but also in location 100.  Some functions use
 the location 100 value instead of the accumulator.  This is especially convenient
 because there is no instruction that uses the accumulator as a load address.
+
+This stub is likely to be very performance critical.  A simple improvement
+would be to inline a copy of the pwl (push) routine in it.  This adds 4 words
+to the stub, but is 4 instructions shorter, dynamically.
+
+```
+/// Address 100, where the cal instruction goes, improved version.
+	0
+	dap rx        /// Save return address.
+	sub (1        /// Get address of original cal instruction.
+	dap .+1       /// Put it into next instruction.
+	lac xy        /// Get the address at the call site.
+	dap ave+1     /// Overwrite the tail call with the destination.
+/// Inlined version of pwl (push) here.
+	idx pdl       /// Increment stack pointer.
+	sad bfw       /// Bounds check.
+	jmp qg2       /// Jump on stack overflow.
+	lac rx        /// Load back return address.
+	dac i pdl     /// Store on stack.
+ave,	lac 100       /// Restore accumulator argument.
+	exit          /// Tail call, overwritten with our destination.
+```
 
 ## uw subroutine
 
@@ -243,7 +268,9 @@ x,	jda uw
 rx,	exit
 ```
 
-}
+This is also likely to be very hot code, and we can improve it by inlining
+the uw routine in it.
+
 
 ## vag routine
 
