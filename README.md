@@ -156,6 +156,9 @@ is both in the accumulator, but also in location 100.  Some functions use
 the location 100 value instead of the accumulator.  This is especially convenient
 because there is no instruction that uses the accumulator as a load address.
 
+Another fun detail is that the IO register is not clobbered by cal, so we
+can pass two arguments: the accumulator and the io register.
+
 ## uw subroutine
 
 The "unsave word" subroutine would be called `pop` today, and the "push down list"
@@ -226,6 +229,9 @@ pwx,	exit
 ```
 
 The accumulator is not clobbered.
+
+The `sad` instruction (skip-accumulator-different) skips the next instruction
+if the accumulator != the argument.  Counterpart of `sas` (skip-accumulator-same).
 
 ## x stub
 
@@ -370,8 +376,7 @@ It assumes the free list has already been checked for
 exhaustion. If the memory cell has cons type then this
 operation is called cons, and the cell will consist
 of two pointers, conventionally called 
-[car](https://en.wikipedia.org/wiki/CAR_and_CDR) and
-[cdr](https://en.wikipedia.org/wiki/CAR_and_CDR).
+[car and cdr](https://en.wikipedia.org/wiki/CAR_and_CDR).
 
 Despite the name, this routine is used to create
 different types of cells, not just cons cells.
@@ -404,3 +409,64 @@ The xeq ('exequte') function is a LISP function for running a single machine cod
 That one instruction can be a jmp instruction though, so it can actually be
 used to run any number of instructions.  The paper suggests the single machine
 code instruction could be 60nnnn to jump to code at the 12 bit address nnnn.
+
+## vad function
+
+Possibly an abbreviation for value-double.  Unboxes two pointers to integers,
+jumping to error if one of them is not an integer.
+
+```
+vad,	dio a1    // Spills the IO register to location a1 (argument 1).
+	cal vag   // Unbox the integer pointed to by accumulator.
+	dac a0    // Spill the unboxed int to a0 (argument 0).
+	lac a1    // Load argument 1.
+	cal vag   // Unbox the integer originally pointed to by IO.
+	dac a1    // Spill the unboxed integer to a1 (argument 1).
+	jmp x     // Return.
+```
+
+Entry arguments are in AC and IO, and the unboxed ints are stored
+to a0 and a1, but argument 1 is also returned, unboxed, in AC.
+
+## eqq function
+
+Described as `entry point of EQ (lengthened)`.
+
+Takes arguments in AC and IO.  Returns true for object
+identity or for two equal integers.  Returns false otherwise.
+
+Comments mine.  Arguments are in AC (copied to location 100) and IO.
+
+```
+eqq,	dio a1     // Spill IO to a1 (argument 1).
+	sad a1     // Skip next insn if IO and AC differ.
+	jmp tru    // Jump to true if objects are identical.
+	lac i a1   // Load first word of argument 1.
+	and i 100  // And with argument 0.
+	and (jmp   // (jmp, the jump instruction used to indicate the constant 600000.
+	sas (jmp   // Skip the next instruction if both arguments are tagged 11 (integer).
+	jmp fal    // Jump false - arguments are not ints and are not identical.
+	lac 100    // Restore AC (argument 0).  Argument 1 is still in IO.
+	cal vad    // Unbox both integer arguments into a0 and a1 locations.
+	sad a0     // Arg 1 is in AC and arg 0 is in a0, so this compares them.
+	jmp tru    // Return true.  Skipped for false.
+	jmp fal    // Return false.
+```
+
+`Eqq` tail calls either `tru` or `fal`:
+
+##
+
+## fal stub.
+
+Returns false (nil).
+
+fal,	lac n
+	jmp x
+
+## tru stub.
+
+Returns true.
+
+tru,	lac tr
+	jmp x
