@@ -587,9 +587,11 @@ cdr,	idx 100
 /CAR
 car,	lac i 100
 /// exit from machine language LISP functions
-x,	jda uw
+x,	lio i pdl
+        dac uw
+	undex pdl
 	dio rx
-	lac uw
+        lac uw
 /// return to calling sequence of a subroutine
 rx,	exit
 

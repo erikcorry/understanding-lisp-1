@@ -277,6 +277,22 @@ rx,	exit
 This is also likely to be very hot code, and we can improve it by inlining
 the uw routine in it.
 
+```
+/// exit from machine language LISP functions
+x,	lio i pdl
+	dac uw
+	undex pdl
+	dio rx
+        lac uw
+/// return to calling sequence of a routine
+rx,	exit
+```
+
+This two words longer than the original x stub, but 2 instructions shorter.
+The `undex` macro clobbers the accumulator, so we have to spill and reload
+it.  We use the uw location for this since the old version of the x stub
+already stored the accumulator there and there may be code that relies on
+this.
 
 ## vag routine
 
@@ -482,18 +498,43 @@ eqq,	dio a1     // Spill IO to a1 (argument 1).
 
 `Eqq` tail calls either `tru` or `fal`:
 
-##
-
 ## fal stub.
 
 Returns false (nil).
 
+```
 fal,	lac n
 	jmp x
+```
 
 ## tru stub.
 
 Returns true.
 
+```
 tru,	lac tr
 	jmp x
+```
+
+## cdr function
+
+The cdr function merely increments the argument, then falls through to car.
+This works because the CDR of a cons cell is the second word of the cell.
+
+```
+cdr,	idx 100
+```
+
+## car function
+
+The car function merely uses the argument for an indirect load, then falls
+through to x, the return stub.
+
+```
+car,	lac i 100
+// The x stub follows.
+```
+
+There is no check of the type of the
+argument, and it is assumed to be a cons cell.  We can easily crash
+the system by passing a non-const cell (eg an integer cell) to car or cdr.
