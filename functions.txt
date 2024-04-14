@@ -1,0 +1,14 @@
+(rplacd
+  (quote rem)
+  (quote (expr
+            (lambda
+              (y x)
+              (cond
+                ((eq y x) 0)
+                ((greaterp x y) y)
+                (t (rem (plus y (minus x)) x))
+              )
+            )
+          )
+  )
+)
