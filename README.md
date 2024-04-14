@@ -377,7 +377,10 @@ cpf,	dzm ffi
 
 Stores 0 in ffi, then tail calls to cnc (cons continuation routine).
 
-I haven't worked out what ffi is for yet, but it's read by the GC.
+It looks like ffi tells the GC the type of the first field in the
+cons that is being created. If ffi (first field immediate?) is zero
+then we are creating an int cons and don't need to mark the first
+word. Otherwise we do.
 
 ## cns routine
 
@@ -387,9 +390,10 @@ Cons routine.
 cns,	idx ffi
 ```
 
-Increments ffi, then falls through to cnc
-
-I haven't worked out what ffi is for yet, but it's read by the GC.
+Increments ffi, making it non-zero, then falls through to cnc
+The non-zero ffi tells the GC that the first word of the cons
+we are building is a pointer that needs marking.  It appears that
+ffi can overflow if you don't create an int for sufficiently long?
 
 ## cnc routine
 
@@ -537,4 +541,15 @@ car,	lac i 100
 
 There is no check of the type of the
 argument, and it is assumed to be a cons cell.  We can easily crash
-the system by passing a non-const cell (eg an integer cell) to car or cdr.
+the system by passing a non-cons cell (eg an integer cell) to car or cdr.
+
+```
+(car 1) 
+(((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((
+((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((
+((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((
+(((((((((((((((((((((((((((((((((((((((((((((((((((((((((((
+pce
+
+HALT instruction, PC: 000005 (STF6)
+```

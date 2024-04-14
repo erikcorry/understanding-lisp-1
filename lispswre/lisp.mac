@@ -301,21 +301,22 @@ define	error F
 	F
 	termin
 
+// On entry, 100 has first word of cons, IO has second word of cons, return address is in AC.
 /garbage collector, non-compacting
-gc,	dap gcx
-	dio ga1
-	dio gfr
-	lac gfr
-	sar 2s
-	sza
-	jsp gfr+1
-	lac ffi
-	sza i
-	jmp gco
-	lac 100
-	jda gfr
-gco,	lac i 1ob
-	jda gfr
+gc,	dap gcx     // Write return address to GC exit.
+	dio ga1     // Save IO register in ga1 during GC.
+	dio gfr     // Save IO register in gfr incoming argument slot.
+	lac gfr     // Load AC from same place.
+	sar 2s      // Shift accumulator right two.
+	sza         // Skip on accumulator == 0.  Accumulator will be zero if we were creating an int cell.
+	jsp gfr+1   // If accumulator != 0, call gfr + 1 (we wrote the arg earlier).  This marks the second word of the cell we were constructing.
+	lac ffi     // Load ffi.  (First field is immediate flag?)
+	sza i       // Skip on AC != 0.
+	jmp gco     // If FFI is 0, skip to gco.
+	lac 100     // Load arg from 100
+	jda gfr     // Call gfr with arg from 100.  This marks the first word of the cell we were constructing.
+gco,	lac i 1ob   // Load 1ob.
+	jda gfr     // Mark it.
 	lac isi
 	sas (isi-1
 	jmp gci
@@ -705,11 +706,11 @@ tic,	mul a0
 	jmp plo+1
 
 /// garbage collector, step
-gcs,	jsp gc
-	lac fre
-	sas n
-	jmp cna
-	jmp qg1
+gcs,	jsp gc    // Do GC.
+	lac fre   // Load free pointer.
+	sas n     // Are we still out of memory.
+	jmp cna   // If we are not out of memory, go back to creating a cons cell.
+	jmp qg1   // We are out of memory - report sce - storage capacity exceeded.
 
 /// make a carriage return, TERPRI (terminate printing)
 /TERPRI
